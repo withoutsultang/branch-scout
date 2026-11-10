@@ -1,4 +1,4 @@
-import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs';
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,7 +34,11 @@ function install(agentDir, project) {
   const staging = mkdtempSync(join(skills, '.branch-scout-install-'));
   const stagedSkill = join(staging, 'branch-scout');
   try {
-    cpSync(source, stagedSkill, { recursive: true });
+    for (const file of skillFiles) {
+      const stagedFile = join(stagedSkill, file);
+      mkdirSync(dirname(stagedFile), { recursive: true });
+      copyFileSync(join(source, file), stagedFile);
+    }
     renameSync(stagedSkill, destination);
   } finally {
     if (dirname(realpathSync(staging)) === realpathSync(skills)) {
