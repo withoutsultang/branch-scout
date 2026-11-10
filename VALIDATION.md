@@ -1,6 +1,6 @@
 # Branch Scout v0.1 검증 기록
 
-2026-11-10 KST 기준의 로컬 공개 후보 검증이다.
+2026-11-10 KST 기준의 v0.1.0 공개 후보 검증이다.
 
 ## OS별 검증
 
@@ -8,10 +8,13 @@
 | --- | --- | --- |
 | Windows 빌드 26300, PowerShell 7.6.9, Node.js 26.13.0, Git 2.56.0.windows.3 | `node --test` | 11개 통과. 세 에이전트의 프로젝트 스킬 복사와 설치 경로의 스캐너 실행도 포함한다. README 터미널 예시를 실제 출력과 대조했다. |
 | Windows Git Bash (MINGW64) | README의 Bash 데모 | 데모 통과. Windows의 Node.js와 Git을 사용했다. |
-| macOS | `node --test` | 미검증. 접근 가능한 macOS 실행 환경이 없었다. |
-| Linux | `node --test` | 미검증. `wsl --list --verbose`에서 설치된 배포판이 없음을 확인했다. |
+| GitHub Actions Windows | `node --test` | 11개 통과. Node.js 22.23.4, Git 2.56.0.windows.4. |
+| GitHub Actions macOS | `node --test` | 11개 통과. Node.js 22.23.4, Git 2.56.0. |
+| GitHub Actions Ubuntu | `node --test` | 11개 통과. Node.js 22.23.4, Git 2.56.0. |
 
-macOS와 Linux에서는 이 폴더 전체를 복사한 뒤 Bash 또는 Zsh에서 아래 명령을 실행한다. 스킬 원본이 들어 있는 숨김 폴더 `.agents`도 복사한다. [GitHub Actions 설정](.github/workflows/test.yml)은 Windows·macOS·Linux에서 Node.js 22로 같은 테스트를 실행하도록 구성되어 있다. 이번 로컬 검증에는 호스팅 러너 실행 결과가 없다.
+첫 Actions 실행에서는 Windows의 Node.js 22.23.4에서 스킬 설치 테스트가 실패했다. 같은 버전으로 로컬에서 실패를 재현했고, 설치 파일을 각각 복사하도록 수정한 `99d9f20`에서 세 러너가 모두 통과했다. [첫 실행](https://github.com/withoutsultang/branch-scout/actions/runs/42754561047) · [수정 후 실행](https://github.com/withoutsultang/branch-scout/actions/runs/42754953135)
+
+macOS와 Linux에서 직접 재현하려면 이 폴더 전체와 스킬 원본이 있는 숨김 폴더 `.agents`를 복사한 뒤 Bash 또는 Zsh에서 아래 명령을 실행한다. [GitHub Actions 설정](.github/workflows/test.yml)
 
 ```bash
 node --version
@@ -76,4 +79,4 @@ Claude Code만 설치했다면 `$scanner` 경로의 `.agents`를 `.claude`로 �
 ## 공개 전 확인
 
 - MIT 라이선스와 `Copyright (c) 2026 withoutsultang`을 확정했다. [LICENSE](LICENSE)
-- 공개 전 GitHub Actions에서 Windows·macOS·Linux 결과와 로그를 검토한다. [v0.1.0 릴리스 노트 초안](RELEASE_NOTES.md)
+- Windows·macOS·Ubuntu의 Actions 통과 결과와 에이전트별 미검증 범위를 릴리스 노트에 반영했다. [v0.1.0 릴리스 노트](RELEASE_NOTES.md)

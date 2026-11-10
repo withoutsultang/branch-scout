@@ -18,8 +18,9 @@ The `main` tip mentions `telegramAlert` at `README.md:3`. The `feature/telegram-
 
 ## Verification for this candidate
 
-- Windows integration tests passed 11 of 11. The demo ran in PowerShell and Windows Git Bash.
+- Windows, macOS, and Ubuntu each passed 11 of 11 integration tests on GitHub Actions with Node.js 22.23.4. [GitHub Actions run](https://github.com/withoutsultang/branch-scout/actions/runs/42754953135)
+- The demo also ran locally in Windows PowerShell and Git Bash.
 - The installed scanner ran from all three agent layouts. A Codex desktop session and a separate Claude Code session used the skill to find the demo results.
-- Hosted macOS and Linux runs are pending. A fresh `codex exec` session on Windows could not launch its shell, and Gemini CLI listed the skill but could not authenticate a model session in the tested account configuration.
+- A fresh `codex exec` session on Windows could not launch its shell. Gemini CLI listed the skill, but the tested account configuration could not authenticate a model session.
 
 See `README.md` for shell and agent setup and `VALIDATION.md` for reproducible checks and the exact demo evidence.
