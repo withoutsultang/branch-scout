@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--ref <branch>]... [--path <file-or-directory>]... [--json]
+const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--ref <branch>]... [--path <file-or-directory>]... [--ignore-case] [--json]
 
 Search committed text at local and stored remote-tracking branch tips.
 Repeat --ref to select exact branch names or full refs.
@@ -201,7 +201,7 @@ function searchTips(run, query, report) {
     const result = run([
       '--literal-pathspecs', `--attr-source=${commit}`, 'grep', '-F', '-n', '-z', '-H', '-I', '--full-name', '--no-column',
       '--no-color', '--no-heading', '--no-break', '--no-textconv', '--no-recurse-submodules',
-      '-C', '0', '-e', query, commit, '--',
+      ...(report.scope.ignoreCase ? ['-i'] : []), '-C', '0', '-e', query, commit, '--',
       ...(report.scope.paths ?? []),
     ]);
     if (!cleanExit(result, 0, 1) || (result.status === 1 && result.stdout.length > 0)) {
@@ -223,7 +223,7 @@ function searchTips(run, query, report) {
   }
 }
 
-function scan({ repo, query, base, paths, ref: requestedRefs }) {
+function scan({ repo, query, base, paths, ref: requestedRefs, 'ignore-case': ignoreCase }) {
   const report = {
     status: 'error',
     scope: { targets: ['local', 'remote-tracking'], snapshot: 'committed-tips', uniqueCommits: 0, searchedCommits: 0 },
@@ -233,6 +233,7 @@ function scan({ repo, query, base, paths, ref: requestedRefs }) {
   };
   if (paths.length) report.scope.paths = paths;
   if (requestedRefs.length) report.scope.refs = [];
+  if (ignoreCase) report.scope.ignoreCase = true;
   const env = gitEnvironment();
   let directory = resolve(repo);
   const run = (args) => git(args, directory, env);
@@ -289,6 +290,7 @@ function formatText(report) {
   );
   if (scope.paths) lines.push(`Paths     ${scope.paths.map((path) => quoted(path)).join(', ')}`);
   if (scope.refs) lines.push(`Refs      ${scope.refs.length ? scope.refs.map((ref) => quoted(ref)).join(', ') : '(none resolved)'}`);
+  if (scope.ignoreCase) lines.push('Match     Case-insensitive');
 
   const location = ({ file, line }) => `${quoted(file)}:${line}`;
   const evidence = ({ ref, commit }) => `${quoted(ref)} @ ${commit}`;
@@ -331,7 +333,7 @@ function main() {
     ({ values } = parseArgs({ options: {
       repo: { type: 'string' }, query: { type: 'string' }, base: { type: 'string' },
       path: { type: 'string', multiple: true, default: [] }, ref: { type: 'string', multiple: true, default: [] },
-      json: { type: 'boolean' },
+      'ignore-case': { type: 'boolean' }, json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     } }));
     if (!values.help && (!values.repo?.trim() || !values.query?.trim() || /[\0\r\n]/.test(values.query) || values.base === '')) {
