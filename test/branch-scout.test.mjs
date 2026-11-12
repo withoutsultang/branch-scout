@@ -79,6 +79,96 @@ test('finds feature code beyond the main README and verifies each location with 
   assert.deepEqual(snapshot(repo), before);
 });
 
+test('searches literal paths from the repository root across branch tips', () => {
+  const repo = createDemo(fixtures);
+  const literal = 'notes[1].md';
+  for (const file of [literal, 'notes1.md']) writeFileSync(join(repo, file), `${query}\n`);
+  demoGit(repo, '--literal-pathspecs', 'add', '--', literal, 'notes1.md');
+  demoGit(repo, 'commit', '-m', 'Add notes with literal path characters');
+  const subdirectory = join(repo, 'subdir');
+  mkdirSync(subdirectory);
+
+  const { exitCode, report } = scan(subdirectory, query, '--path', './src/', '--path', literal, '--path', 'src');
+  assert.equal(exitCode, 0);
+  assert.deepEqual(report.scope.paths, ['src', literal]);
+  assert.deepEqual(report.matches.map(({ branch, file }) => [branch, file]), [
+    [feature, 'src/alerts.mjs'],
+    ['main', literal],
+  ]);
+  const text = runCli(repo, '--query', query, '--path', 'src', '--path', literal);
+  assert.match(text.stdout, /^Comparison within selected paths /);
+  assert.match(text.stdout, /^Paths     "src", "notes\[1\]\.md"$/m);
+  for (const invalidPath of ['../src', '/src', 'C:/src', 'src\\alerts.mjs', '']) {
+    const invalid = runCli(repo, '--query', query, `--path=${invalidPath}`);
+    assert.equal(invalid.status, 2);
+    assert.match(invalid.stderr, /repository-relative/);
+  }
+});
+
+test('selects exact refs and deduplicates aliases without changing the checkout or baseline', () => {
+  const repo = createDemo(fixtures);
+  const featureRef = `refs/heads/${feature}`;
+  const remoteRef = 'refs/remotes/origin/candidate';
+  const featureCommit = demoGit(repo, 'rev-parse', '--verify', featureRef);
+  const mainCommit = demoGit(repo, 'rev-parse', '--verify', 'refs/heads/main');
+  demoGit(repo, 'update-ref', remoteRef, featureCommit);
+  demoGit(repo, 'update-ref', `refs/heads/${remoteRef}`, mainCommit);
+  const before = snapshot(repo);
+
+  const { exitCode, report } = scan(repo, query,
+    '--ref', feature, '--ref', featureRef, '--ref', remoteRef, '--base', 'main');
+  assert.equal(exitCode, 0);
+  assert.equal(report.status, 'complete');
+  assert.equal(report.checkout.ref, 'refs/heads/main');
+  assert.equal(report.baseline.ref, 'refs/heads/main');
+  const selected = [featureRef, remoteRef];
+  assert.deepEqual([...report.scope.refs].sort(), selected);
+  assert.deepEqual(report.branches.map(({ ref }) => ref).sort(), selected);
+  assert.equal(report.scope.uniqueCommits, 1);
+  assert.equal(report.scope.searchedCommits, 1);
+  assert.equal(report.matches.length, 4);
+  for (const ref of selected) {
+    assert.deepEqual(report.matches.filter((hit) => hit.ref === ref).map(({ commit, file, line }) => [commit, file, line]), [
+      [featureCommit, 'README.md', 3],
+      [featureCommit, 'src/alerts.mjs', 1],
+    ]);
+  }
+  assert.deepEqual(snapshot(repo), before);
+});
+
+test('rejects unknown and ambiguous ref selections without scanning the other selections', () => {
+  const repo = createDemo(fixtures);
+  const mainCommit = demoGit(repo, 'rev-parse', '--verify', 'refs/heads/main');
+  demoGit(repo, 'update-ref', 'refs/heads/origin/main', mainCommit);
+  demoGit(repo, 'update-ref', 'refs/remotes/origin/main', mainCommit);
+
+  for (const [ref, issue] of [['does-not-exist', 'ref-unavailable'], ['origin/main', 'ambiguous-ref']]) {
+    const { exitCode, report } = scan(repo, query, '--ref', feature, '--ref', ref);
+    assert.equal(exitCode, 1);
+    assert.ok(report.issues.some(({ code }) => code === issue));
+    assert.equal(report.scope.searchedCommits, 0);
+    assert.deepEqual(report.matches, []);
+  }
+});
+
+test('opts in to case-insensitive matches within the selected ref and path', () => {
+  const repo = createDemo(fixtures);
+  const lowerCaseQuery = query.toLowerCase();
+  const filters = ['--ref', feature, '--path', 'src'];
+  const exact = scan(repo, lowerCaseQuery, ...filters);
+  assert.equal(exact.exitCode, 0);
+  assert.deepEqual(exact.report.matches, []);
+  assert.equal(Object.hasOwn(exact.report.scope, 'ignoreCase'), false);
+
+  const { exitCode, report } = scan(repo, lowerCaseQuery, ...filters, '--ignore-case');
+  assert.equal(exitCode, 0);
+  assert.equal(report.scope.ignoreCase, true);
+  assert.deepEqual(report.scope.paths, ['src']);
+  assert.deepEqual(report.matches.map(({ ref, file, line }) => [ref, file, line]), [
+    [`refs/heads/${feature}`, 'src/alerts.mjs', 1],
+  ]);
+});
+
 test('the sample sends the notification through an injected bot without network access', async () => {
   const repo = createDemo(fixtures);
   demoGit(repo, 'switch', feature);

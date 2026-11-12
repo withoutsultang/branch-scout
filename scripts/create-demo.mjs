@@ -15,7 +15,16 @@ export function demoGit(directory, ...args) {
   return result.stdout.trimEnd();
 }
 
-export function createDemo(parent = tmpdir()) {
+export function createDemo(parent = tmpdir(), { fictional = false } = {}) {
+  const example = fictional
+    ? {
+        title: 'Fictional trail planner', label: 'waypoint', entryPoint: 'waypointAlert',
+        parameters: 'notifier, waypointId, message', delivery: 'notifier.send(waypointId, message)',
+      }
+    : {
+        title: 'Demo travel planner', label: 'Telegram', entryPoint: 'telegramAlert',
+        parameters: 'bot, chatId, message', delivery: 'bot.sendMessage(chatId, message)',
+      };
   const directory = mkdtempSync(join(parent, 'branch scout 알림 '));
   const git = (...args) => demoGit(directory, ...args);
   git('init', '--template=', '--object-format=sha1', '--initial-branch=main');
@@ -23,26 +32,30 @@ export function createDemo(parent = tmpdir()) {
   git('config', 'user.email', 'demo@example.invalid');
   git('config', 'core.autocrlf', 'false');
 
-  writeFileSync(join(directory, 'README.md'), '# Demo travel planner\n\nPlanned Telegram notification entry point: `telegramAlert`.\n');
+  writeFileSync(join(directory, 'README.md'), `# ${example.title}\n\nPlanned ${example.label} notification entry point: \`${example.entryPoint}\`.\n`);
   git('add', '--', 'README.md');
-  git('commit', '-m', 'Document planned Telegram alerts');
-  git('switch', '-c', 'feature/telegram-alerts');
+  git('commit', '-m', `Document planned ${example.label} alerts`);
+  git('switch', '-c', `feature/${example.label.toLowerCase()}-alerts`);
   mkdirSync(join(directory, 'src'));
   writeFileSync(join(directory, 'src', 'alerts.mjs'), [
-    'export async function telegramAlert(bot, chatId, message) {',
-    '  return bot.sendMessage(chatId, message);',
+    `export async function ${example.entryPoint}(${example.parameters}) {`,
+    `  return ${example.delivery};`,
     '}',
     '',
   ].join('\n'));
   git('add', '--', 'src/alerts.mjs');
-  git('commit', '-m', 'Implement Telegram notification');
+  git('commit', '-m', `Implement ${example.label} notification`);
   git('switch', 'main');
   return directory;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    process.stdout.write(`${createDemo()}\n`);
+    const args = process.argv.slice(2);
+    if (args.length > 1 || (args.length === 1 && args[0] !== '--fictional')) {
+      throw new Error('Usage: node ./scripts/create-demo.mjs [--fictional]');
+    }
+    process.stdout.write(`${createDemo(undefined, { fictional: args[0] === '--fictional' })}\n`);
   } catch (error) {
     process.stderr.write(`Could not create the demo. ${error.message}\n`);
     process.exitCode = 1;

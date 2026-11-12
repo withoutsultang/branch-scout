@@ -1,3 +1,30 @@
+# Branch Scout v0.5.0
+
+Branch Scout searches committed Git branch tips and reports the exact branch ref, commit hash, file, and line for each documentation mention or code match. It runs with Node.js 22+ and Git 2.45+ and has zero package dependencies.
+
+- Search specific local or stored remote-tracking branches with repeatable `--ref` options. Use full refs to disambiguate shared short names. The report still identifies the checkout and comparison baseline independently.
+- Limit the scan to literal files or directories with repeatable `--path` options. Select `--ignore-case` to match a keyword across capitalization variants.
+- Use `--json` to pass matching locations and the selected search scope to scripts or the shared Codex, Claude Code, and Gemini CLI skill.
+- Follow the README's 25-second fictional demo to reproduce a documentation mention on `main` and a code match on a feature branch.
+
+## Try it
+
+```text
+git clone https://github.com/withoutsultang/branch-scout.git
+cd branch-scout
+node ./scripts/create-demo.mjs --fictional
+```
+
+Use the printed repository path in the search command.
+
+```text
+node ./bin/branch-scout.mjs --repo "<demo-path>" --query waypointalert --ignore-case --ref feature/waypoint-alerts --path src
+```
+
+The demo returns the code location `src/alerts.mjs:1` with its commit hash. Code matches identify candidates for inspection. Confirm behavior and deployment with separate evidence.
+
+---
+
 # Branch Scout v0.1.0 pre-release
 
 Branch Scout searches committed Git branch tips for a literal keyword and reports the full ref, commit hash, file, and line for each match. It searches local branches and stored remote-tracking refs with lazy fetching disabled.
