@@ -169,6 +169,41 @@ test('opts in to case-insensitive matches within the selected ref and path', () 
   ]);
 });
 
+test('filters returned match kinds while preserving branch coverage', () => {
+  const repo = createDemo(fixtures);
+  demoGit(repo, 'switch', feature);
+  writeFileSync(join(repo, 'settings.env'), `ENTRY_POINT=${query}\n`);
+  demoGit(repo, 'add', '--', 'settings.env');
+  demoGit(repo, 'commit', '-m', 'Add a configuration match');
+
+  const unfiltered = scan(repo, query, '--base', 'main');
+  const filtered = scan(repo, query, '--base', 'main', '--kind', 'other', '--kind', 'code', '--kind', 'other');
+  assert.equal(filtered.exitCode, 0);
+  assert.equal(filtered.report.status, 'complete');
+  assert.deepEqual(filtered.report.scope.kinds, ['other', 'code']);
+  assert.deepEqual(filtered.report.branches, unfiltered.report.branches);
+  assert.equal(filtered.report.scope.uniqueCommits, unfiltered.report.scope.uniqueCommits);
+  assert.equal(filtered.report.scope.searchedCommits, unfiltered.report.scope.searchedCommits);
+  assert.deepEqual(filtered.report.matches.map(({ kind, ref, file }) => [kind, ref, file]).sort(), [
+    ['code', `refs/heads/${feature}`, 'src/alerts.mjs'],
+    ['other', `refs/heads/${feature}`, 'settings.env'],
+  ]);
+
+  assert.match(runCli(repo, '--query', query, '--base', 'main').stdout, /^Comparison /);
+  const selectedText = runCli(repo, '--query', query, '--base', 'main', '--kind', 'documentation', '--kind', 'code');
+  assert.equal(selectedText.status, 0);
+  assert.doesNotMatch(selectedText.stdout, /^Comparison /m);
+  assert.match(selectedText.stdout, /^Code candidates$/m);
+  assert.match(selectedText.stdout, /^Documentation matches$/m);
+
+  for (const invalidKind of ['source', '']) {
+    const invalid = runCli(repo, '--query', query, '--kind=code', `--kind=${invalidKind}`);
+    assert.equal(invalid.status, 2);
+    assert.equal(invalid.stdout, '');
+    assert.match(invalid.stderr, /--kind/);
+  }
+});
+
 test('the sample sends the notification through an injected bot without network access', async () => {
   const repo = createDemo(fixtures);
   demoGit(repo, 'switch', feature);
