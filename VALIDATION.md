@@ -70,7 +70,7 @@ git -C "$demo" rev-parse refs/heads/main refs/heads/feature/telegram-alerts
 Set-Location -LiteralPath $demo
 ```
 
-Claude Code만 설치했다면 `$scanner` 경로의 `.agents`를 `.claude`로 바꾼다. Bash 또는 Zsh에서는 README의 `demo="$(node ./scripts/create-demo.mjs)"`와 `cd "$demo"`를 사용하고, 스캐너는 `node "$demo/.agents/skills/branch-scout/scripts/branch-scout.mjs" --repo "$demo" --query=telegramAlert --base main --json`으로 실행한다.
+Claude Code만 설치했다면 `$scanner` 경로의 `.agents`를 `.claude`로 바꾼다. 기존 검증을 Bash 또는 Zsh에서 재현하려면 `--fictional` 없이 `demo="$(node ./scripts/create-demo.mjs)"`를 실행하고 `cd "$demo"`로 이동한다. 스캐너는 `node "$demo/.agents/skills/branch-scout/scripts/branch-scout.mjs" --repo "$demo" --query=telegramAlert --base main --json`으로 실행한다.
 
 - Codex에서 데모 폴더를 열고 `$branch-scout`를 선택한 뒤 같은 질문을 보낸다. 별도 CLI 검증은 해당 폴더에서 `codex exec --sandbox read-only --ephemeral --json 'Use the $branch-scout skill. Where is telegramAlert mentioned or implemented? Use main as the baseline and cite the exact ref, commit, file and line.'`으로 재현할 수 있다. [Codex 스킬 문서](https://learn.chatgpt.com/docs/build-skills)
 - Claude Code를 `claude`로 시작하고 `/branch-scout` 뒤에 같은 질문을 보낸다. 스킬 미설치 대조군은 별도의 새 데모에서 설치 단계를 건너뛰고 같은 질문을 보낸다. [Claude Code 스킬 문서](https://code.claude.com/docs/en/skills)
