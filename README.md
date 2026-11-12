@@ -81,8 +81,15 @@ Codex and Gemini CLI share `.agents/skills/branch-scout`. Claude Code uses `.cla
 node ./bin/branch-scout.mjs --repo "../my project" --query waypointAlert --base main --json
 ```
 
+Pass `--path` for each file or directory to search the same branch tips within those locations.
+
+```text
+node ./bin/branch-scout.mjs --repo "$demo" --query waypointAlert --base main --path src --path README.md
+```
+
 - `--query` accepts one literal substring on a single line. Use `--query=<value>` when it begins with a dash. Matching is case-sensitive.
 - `--base` selects the comparison branch independently of the checkout. Use a full ref such as `refs/heads/main` when a short name is ambiguous. The default uses the stored `origin/HEAD` target or the only local branch named `main` or `master`. Otherwise the baseline is unresolved.
+- `--path` accepts a literal file or directory relative to the repository root, with `/` separators. Repeat it to include multiple locations. The selected paths appear in the terminal output and in JSON under `scope.paths`.
 - Plain text highlights a documentation-only baseline when code matches on another branch. JSON keeps individual match records and includes `status`, `scope`, `checkout`, `baseline`, `branches`, `matches`, and `issues`. Each match contains `ref`, `branch`, `commit`, `source`, `file`, `line`, and `kind`. Both formats report locations and omit matched lines, config values, and remote URLs.
 
 | Exit code | Meaning |
