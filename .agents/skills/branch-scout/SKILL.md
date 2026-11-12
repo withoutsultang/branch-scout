@@ -7,7 +7,7 @@ description: Locate a feature keyword or code identifier across local Git branch
 
 Find `scripts/branch-scout.mjs` inside the installed skill directory that contains this `SKILL.md`. Use its absolute path even when the target repository is elsewhere. The script needs Node.js 22+ and Git 2.45+ on the shell's PATH.
 
-Use the repository path and a single literal keyword or identifier from the request. Supply `--base` if the user names a comparison branch. Pass each branch the user wants searched as `--ref`, using its full ref when known, and pass each requested file or directory as a repository-relative `--path`. Use `--ignore-case` when the user wants case-insensitive matching. Include any applied filters when describing the result.
+Use the repository path and a single literal keyword or identifier from the request. Supply `--base` if the user names a comparison branch. Pass each branch the user wants searched as `--ref`, using its full ref when known, and pass each requested file or directory as a repository-relative `--path`. Use `--ignore-case` when the user wants case-insensitive matching. Use `--kind` for each requested match type (`code`, `documentation`, or `other`). Include any applied filters when describing the result.
 
 ```text
 node <absolute-cli-path> --repo <repository-path> --query=<literal> --json

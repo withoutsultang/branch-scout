@@ -3,11 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--ref <branch>]... [--path <file-or-directory>]... [--ignore-case] [--json]
+const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--ref <branch>]... [--path <file-or-directory>]... [--ignore-case] [--kind <kind>]... [--json]
 
 Search committed text at local and stored remote-tracking branch tips.
 Repeat --ref to select exact branch names or full refs.
 Repeat --path to select literal files or directories relative to the repository root.
+Repeat --kind to report code, documentation, or other matches.
 Use --option=value for values that start with a dash.
 Exit codes: 0 complete (including zero matches), 1 incomplete or failed, 2 invalid arguments.`;
 
@@ -15,6 +16,7 @@ const localPrefix = 'refs/heads/';
 const remotePrefix = 'refs/remotes/';
 const objectId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+const matchKinds = new Set(['code', 'documentation', 'other']);
 const docExtensions = new Set(['.md', '.mdx', '.markdown', '.rst', '.adoc', '.asciidoc', '.org', '.rdoc']);
 const codeExtensions = new Set([
   '.asm', '.bash', '.c', '.cc', '.clj', '.cpp', '.cs', '.css', '.dart', '.ex', '.exs', '.fs',
@@ -214,6 +216,7 @@ function searchTips(run, query, report) {
 
     try {
       for (const hit of readMatches(result.stdout, commit)) {
+        if (report.scope.kinds && !report.scope.kinds.includes(hit.kind)) continue;
         for (const entry of branches) report.matches.push({ ...entry, ...hit });
       }
       report.scope.searchedCommits++;
@@ -223,7 +226,7 @@ function searchTips(run, query, report) {
   }
 }
 
-function scan({ repo, query, base, paths, ref: requestedRefs, 'ignore-case': ignoreCase }) {
+function scan({ repo, query, base, paths, ref: requestedRefs, 'ignore-case': ignoreCase, kinds }) {
   const report = {
     status: 'error',
     scope: { targets: ['local', 'remote-tracking'], snapshot: 'committed-tips', uniqueCommits: 0, searchedCommits: 0 },
@@ -234,6 +237,7 @@ function scan({ repo, query, base, paths, ref: requestedRefs, 'ignore-case': ign
   if (paths.length) report.scope.paths = paths;
   if (requestedRefs.length) report.scope.refs = [];
   if (ignoreCase) report.scope.ignoreCase = true;
+  if (kinds.length) report.scope.kinds = kinds;
   const env = gitEnvironment();
   let directory = resolve(repo);
   const run = (args) => git(args, directory, env);
@@ -274,7 +278,7 @@ function formatText(report) {
   const code = matches.filter(({ kind }) => kind === 'code');
   const baselineHits = matches.filter(({ ref }) => ref === baseline.ref);
   const lines = [];
-  if (baselineHits.length && baselineHits.every(({ kind }) => kind === 'documentation') && code.length) {
+  if (!scope.kinds && baselineHits.length && baselineHits.every(({ kind }) => kind === 'documentation') && code.length) {
     const branchCount = new Set(code.map(({ ref }) => ref)).size;
     const prefix = report.status === 'complete' ? 'Comparison' : 'Comparison among searched tips';
     const filters = [scope.refs && 'branches', scope.paths && 'paths'].filter(Boolean);
@@ -291,6 +295,7 @@ function formatText(report) {
   if (scope.paths) lines.push(`Paths     ${scope.paths.map((path) => quoted(path)).join(', ')}`);
   if (scope.refs) lines.push(`Refs      ${scope.refs.length ? scope.refs.map((ref) => quoted(ref)).join(', ') : '(none resolved)'}`);
   if (scope.ignoreCase) lines.push('Match     Case-insensitive');
+  if (scope.kinds) lines.push(`Kinds     ${scope.kinds.join(', ')}`);
 
   const location = ({ file, line }) => `${quoted(file)}:${line}`;
   const evidence = ({ ref, commit }) => `${quoted(ref)} @ ${commit}`;
@@ -333,7 +338,8 @@ function main() {
     ({ values } = parseArgs({ options: {
       repo: { type: 'string' }, query: { type: 'string' }, base: { type: 'string' },
       path: { type: 'string', multiple: true, default: [] }, ref: { type: 'string', multiple: true, default: [] },
-      'ignore-case': { type: 'boolean' }, json: { type: 'boolean' },
+      'ignore-case': { type: 'boolean' }, kind: { type: 'string', multiple: true, default: [] },
+      json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     } }));
     if (!values.help && (!values.repo?.trim() || !values.query?.trim() || /[\0\r\n]/.test(values.query) || values.base === '')) {
@@ -350,12 +356,15 @@ function main() {
   }
   try {
     paths = [...new Set(values.path.map(normalizePath))];
+    if (values.kind.some((kind) => !matchKinds.has(kind))) {
+      throw new Error('Use --kind with code, documentation, or other.');
+    }
   } catch (error) {
     process.stderr.write(`${error.message}\n\n${usage}\n`);
     process.exitCode = 2;
     return;
   }
-  const report = scan({ ...values, paths });
+  const report = scan({ ...values, paths, kinds: [...new Set(values.kind)] });
   process.stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatText(report));
   process.exitCode = report.status === 'complete' ? 0 : 1;
 }
