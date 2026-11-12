@@ -79,6 +79,32 @@ test('finds feature code beyond the main README and verifies each location with 
   assert.deepEqual(snapshot(repo), before);
 });
 
+test('searches literal paths from the repository root across branch tips', () => {
+  const repo = createDemo(fixtures);
+  const literal = 'notes[1].md';
+  for (const file of [literal, 'notes1.md']) writeFileSync(join(repo, file), `${query}\n`);
+  demoGit(repo, '--literal-pathspecs', 'add', '--', literal, 'notes1.md');
+  demoGit(repo, 'commit', '-m', 'Add notes with literal path characters');
+  const subdirectory = join(repo, 'subdir');
+  mkdirSync(subdirectory);
+
+  const { exitCode, report } = scan(subdirectory, query, '--path', './src/', '--path', literal, '--path', 'src');
+  assert.equal(exitCode, 0);
+  assert.deepEqual(report.scope.paths, ['src', literal]);
+  assert.deepEqual(report.matches.map(({ branch, file }) => [branch, file]), [
+    [feature, 'src/alerts.mjs'],
+    ['main', literal],
+  ]);
+  const text = runCli(repo, '--query', query, '--path', 'src', '--path', literal);
+  assert.match(text.stdout, /^Comparison within selected paths /);
+  assert.match(text.stdout, /^Paths     "src", "notes\[1\]\.md"$/m);
+  for (const invalidPath of ['../src', '/src', 'C:/src', 'src\\alerts.mjs', '']) {
+    const invalid = runCli(repo, '--query', query, `--path=${invalidPath}`);
+    assert.equal(invalid.status, 2);
+    assert.match(invalid.stderr, /repository-relative/);
+  }
+});
+
 test('the sample sends the notification through an injected bot without network access', async () => {
   const repo = createDemo(fixtures);
   demoGit(repo, 'switch', feature);

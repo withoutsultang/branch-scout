@@ -3,10 +3,11 @@ import { spawnSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--json]
+const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--path <file-or-directory>]... [--json]
 
 Search committed text at local and stored remote-tracking branch tips.
-Use --query=<literal> when the query starts with a dash.
+Repeat --path to select literal files or directories relative to the repository root.
+Use --option=value for values that start with a dash.
 Exit codes: 0 complete (including zero matches), 1 incomplete or failed, 2 invalid arguments.`;
 
 const localPrefix = 'refs/heads/';
@@ -24,7 +25,7 @@ const codeExtensions = new Set([
 function gitEnvironment() {
   const env = { ...process.env };
   // Repo and config overrides inherited from a Git hook must not redirect --repo.
-  const overrides = /^(?:GIT_(?:ALLOW_PROTOCOL|ALTERNATE_OBJECT_DIRECTORIES|ATTR_SOURCE|COMMON_DIR|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|DIR|GRAFT_FILE|IMPLICIT_WORK_TREE|INDEX_FILE|NAMESPACE|OBJECT_DIRECTORY|PREFIX|SHALLOW_FILE|WORK_TREE)|GIT_TRACE.*)$/i;
+  const overrides = /^(?:GIT_(?:ALLOW_PROTOCOL|ALTERNATE_OBJECT_DIRECTORIES|ATTR_SOURCE|COMMON_DIR|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|DIR|GLOB_PATHSPECS|GRAFT_FILE|ICASE_PATHSPECS|IMPLICIT_WORK_TREE|INDEX_FILE|LITERAL_PATHSPECS|NAMESPACE|NOGLOB_PATHSPECS|OBJECT_DIRECTORY|PREFIX|SHALLOW_FILE|WORK_TREE)|GIT_TRACE.*)$/i;
   for (const key of Object.keys(env)) {
     if (overrides.test(key)) delete env[key];
   }
@@ -117,6 +118,15 @@ function kindFor(file) {
   return 'other';
 }
 
+function normalizePath(path) {
+  const normalized = posix.normalize(path).replace(/\/$/, '');
+  if (posix.isAbsolute(path) || /^[a-z]:/i.test(path) || /[\\\0]/.test(path) ||
+      path.split('/').includes('..') || normalized === '.') {
+    throw new Error('Use --path with a repository-relative file or directory and forward slashes.');
+  }
+  return normalized;
+}
+
 function readMatches(stdout, commit) {
   const prefix = Buffer.from(`${commit}:`);
   const matches = [];
@@ -159,9 +169,10 @@ function searchTips(run, query, report) {
     }
 
     const result = run([
-      `--attr-source=${commit}`, 'grep', '-F', '-n', '-z', '-H', '-I', '--full-name', '--no-column',
+      '--literal-pathspecs', `--attr-source=${commit}`, 'grep', '-F', '-n', '-z', '-H', '-I', '--full-name', '--no-column',
       '--no-color', '--no-heading', '--no-break', '--no-textconv', '--no-recurse-submodules',
       '-C', '0', '-e', query, commit, '--',
+      ...(report.scope.paths ?? []),
     ]);
     if (!cleanExit(result, 0, 1) || (result.status === 1 && result.stdout.length > 0)) {
       const message = result.error?.code === 'ENOBUFS'
@@ -182,7 +193,7 @@ function searchTips(run, query, report) {
   }
 }
 
-function scan({ repo, query, base }) {
+function scan({ repo, query, base, paths }) {
   const report = {
     status: 'error',
     scope: { targets: ['local', 'remote-tracking'], snapshot: 'committed-tips', uniqueCommits: 0, searchedCommits: 0 },
@@ -190,6 +201,7 @@ function scan({ repo, query, base }) {
     baseline: { state: 'unresolved', reason: 'repository-unavailable' },
     branches: [], matches: [], issues: [],
   };
+  if (paths.length) report.scope.paths = paths;
   const env = gitEnvironment();
   let directory = resolve(repo);
   const run = (args) => git(args, directory, env);
@@ -216,8 +228,8 @@ function scan({ repo, query, base }) {
   const refsComplete = cleanExit(refs, 0);
   if (!refsComplete) report.issues.push({ code: 'refs-incomplete', message: 'Git could not list all branch refs.' });
   const aliases = readRefs(refs, report);
-  report.baseline = resolveBase(report.branches, aliases, base,
-    refsComplete && !report.issues.some(({ code }) => code === 'invalid-ref'));
+  const allRefsRead = refsComplete && !report.issues.some(({ code }) => code === 'invalid-ref');
+  report.baseline = resolveBase(report.branches, aliases, base, allRefsRead);
   searchTips(run, query, report);
   report.status = report.issues.length === 0 ? 'complete' : 'partial';
   return report;
@@ -232,7 +244,8 @@ function formatText(report) {
   if (baselineHits.length && baselineHits.every(({ kind }) => kind === 'documentation') && code.length) {
     const branchCount = new Set(code.map(({ ref }) => ref)).size;
     const prefix = report.status === 'complete' ? 'Comparison' : 'Comparison among searched tips';
-    lines.push(`${prefix} | ${quoted(baseline.ref)} has documentation matches only. Code matches on ${branchCount} other ${branchCount === 1 ? 'branch' : 'branches'}.`);
+    const scopeLabel = scope.paths ? ' within selected paths' : '';
+    lines.push(`${prefix}${scopeLabel} | ${quoted(baseline.ref)} has documentation matches only. Code matches on ${branchCount} other ${branchCount === 1 ? 'branch' : 'branches'}.`);
   }
   lines.push(
     `Search ${report.status} | local and stored remote-tracking branch tips | ${report.branches.length} branches | ${scope.searchedCommits}/${scope.uniqueCommits} commits searched`,
@@ -241,6 +254,7 @@ function formatText(report) {
       ? `Baseline  ${quoted(baseline.ref)} @ ${baseline.commit} (${baseline.via})`
       : `Baseline  unresolved (${baseline.reason})`,
   );
+  if (scope.paths) lines.push(`Paths     ${scope.paths.map((path) => quoted(path)).join(', ')}`);
 
   const location = ({ file, line }) => `${quoted(file)}:${line}`;
   const evidence = ({ ref, commit }) => `${quoted(ref)} @ ${commit}`;
@@ -278,10 +292,13 @@ function formatText(report) {
 
 function main() {
   let values;
+  let paths;
   try {
     ({ values } = parseArgs({ options: {
       repo: { type: 'string' }, query: { type: 'string' }, base: { type: 'string' },
-      json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      path: { type: 'string', multiple: true, default: [] },
+      json: { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' },
     } }));
     if (!values.help && (!values.repo?.trim() || !values.query?.trim() || /[\0\r\n]/.test(values.query) || values.base === '')) {
       throw new Error('Invalid arguments');
@@ -295,7 +312,14 @@ function main() {
     process.stdout.write(`${usage}\n`);
     return;
   }
-  const report = scan(values);
+  try {
+    paths = [...new Set(values.path.map(normalizePath))];
+  } catch (error) {
+    process.stderr.write(`${error.message}\n\n${usage}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  const report = scan({ ...values, paths });
   process.stdout.write(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatText(report));
   process.exitCode = report.status === 'complete' ? 0 : 1;
 }
