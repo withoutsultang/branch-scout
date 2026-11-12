@@ -105,6 +105,52 @@ test('searches literal paths from the repository root across branch tips', () =>
   }
 });
 
+test('selects exact refs and deduplicates aliases without changing the checkout or baseline', () => {
+  const repo = createDemo(fixtures);
+  const featureRef = `refs/heads/${feature}`;
+  const remoteRef = 'refs/remotes/origin/candidate';
+  const featureCommit = demoGit(repo, 'rev-parse', '--verify', featureRef);
+  const mainCommit = demoGit(repo, 'rev-parse', '--verify', 'refs/heads/main');
+  demoGit(repo, 'update-ref', remoteRef, featureCommit);
+  demoGit(repo, 'update-ref', `refs/heads/${remoteRef}`, mainCommit);
+  const before = snapshot(repo);
+
+  const { exitCode, report } = scan(repo, query,
+    '--ref', feature, '--ref', featureRef, '--ref', remoteRef, '--base', 'main');
+  assert.equal(exitCode, 0);
+  assert.equal(report.status, 'complete');
+  assert.equal(report.checkout.ref, 'refs/heads/main');
+  assert.equal(report.baseline.ref, 'refs/heads/main');
+  const selected = [featureRef, remoteRef];
+  assert.deepEqual([...report.scope.refs].sort(), selected);
+  assert.deepEqual(report.branches.map(({ ref }) => ref).sort(), selected);
+  assert.equal(report.scope.uniqueCommits, 1);
+  assert.equal(report.scope.searchedCommits, 1);
+  assert.equal(report.matches.length, 4);
+  for (const ref of selected) {
+    assert.deepEqual(report.matches.filter((hit) => hit.ref === ref).map(({ commit, file, line }) => [commit, file, line]), [
+      [featureCommit, 'README.md', 3],
+      [featureCommit, 'src/alerts.mjs', 1],
+    ]);
+  }
+  assert.deepEqual(snapshot(repo), before);
+});
+
+test('rejects unknown and ambiguous ref selections without scanning the other selections', () => {
+  const repo = createDemo(fixtures);
+  const mainCommit = demoGit(repo, 'rev-parse', '--verify', 'refs/heads/main');
+  demoGit(repo, 'update-ref', 'refs/heads/origin/main', mainCommit);
+  demoGit(repo, 'update-ref', 'refs/remotes/origin/main', mainCommit);
+
+  for (const [ref, issue] of [['does-not-exist', 'ref-unavailable'], ['origin/main', 'ambiguous-ref']]) {
+    const { exitCode, report } = scan(repo, query, '--ref', feature, '--ref', ref);
+    assert.equal(exitCode, 1);
+    assert.ok(report.issues.some(({ code }) => code === issue));
+    assert.equal(report.scope.searchedCommits, 0);
+    assert.deepEqual(report.matches, []);
+  }
+});
+
 test('the sample sends the notification through an injected bot without network access', async () => {
   const repo = createDemo(fixtures);
   demoGit(repo, 'switch', feature);

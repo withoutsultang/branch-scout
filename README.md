@@ -81,14 +81,15 @@ Codex and Gemini CLI share `.agents/skills/branch-scout`. Claude Code uses `.cla
 node ./bin/branch-scout.mjs --repo "../my project" --query waypointAlert --base main --json
 ```
 
-Pass `--path` for each file or directory to search the same branch tips within those locations.
+Use `--ref` and `--path` to narrow the demo search to two branch tips and two locations.
 
 ```text
-node ./bin/branch-scout.mjs --repo "$demo" --query waypointAlert --base main --path src --path README.md
+node ./bin/branch-scout.mjs --repo "$demo" --query waypointAlert --base main --ref main --ref refs/heads/feature/waypoint-alerts --path src --path README.md
 ```
 
 - `--query` accepts one literal substring on a single line. Use `--query=<value>` when it begins with a dash. Matching is case-sensitive.
-- `--base` selects the comparison branch independently of the checkout. Use a full ref such as `refs/heads/main` when a short name is ambiguous. The default uses the stored `origin/HEAD` target or the only local branch named `main` or `master`. Otherwise the baseline is unresolved.
+- `--base` selects the comparison branch independently of the checkout and search filters. Use a full ref such as `refs/heads/main` when a short name is ambiguous. The default uses the stored `origin/HEAD` target or the only local branch named `main` or `master`. Otherwise the baseline is unresolved.
+- `--ref` accepts an exact branch name or full ref. Repeat it to select multiple branches. Full refs disambiguate short names shared by local and remote-tracking branches. An unknown or ambiguous selector stops the scan with exit code `1`. JSON reports the selected full refs in `scope.refs`.
 - `--path` accepts a literal file or directory relative to the repository root, with `/` separators. Repeat it to include multiple locations. The selected paths appear in the terminal output and in JSON under `scope.paths`.
 - Plain text highlights a documentation-only baseline when code matches on another branch. JSON keeps individual match records and includes `status`, `scope`, `checkout`, `baseline`, `branches`, `matches`, and `issues`. Each match contains `ref`, `branch`, `commit`, `source`, `file`, `line`, and `kind`. Both formats report locations and omit matched lines, config values, and remote URLs.
 
@@ -100,7 +101,7 @@ node ./bin/branch-scout.mjs --repo "$demo" --query waypointAlert --base main --p
 
 ## Which Git branches does Branch Scout search?
 
-By default, Branch Scout searches the latest committed snapshot of each local branch and each remote-tracking branch stored in your clone. Stored remote-tracking refs may be stale. The scanner reads each unique commit once and attributes hits to every direct ref that points to it.
+By default, Branch Scout searches the latest committed snapshot of each local branch and each remote-tracking branch stored in your clone. Stored remote-tracking refs may be stale. The scanner reads each unique commit once and attributes hits to every selected ref that points to it.
 
 It disables lazy fetching and reports missing objects as incomplete coverage. Worktree edits, the index, history, tags, submodules, and binary files are outside the scan. Classification uses filenames and extensions. A commit exceeding the 16 MiB Git output buffer is reported as incomplete. See the [Git command documentation](https://git-scm.com/docs/git/2.45.0) and the [git grep manual](https://git-scm.com/docs/git-grep).
 

@@ -3,9 +3,10 @@ import { spawnSync } from 'node:child_process';
 import { posix, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--path <file-or-directory>]... [--json]
+const usage = `Usage: node <path-to-branch-scout.mjs> --repo <path> --query <literal> [--base <branch>] [--ref <branch>]... [--path <file-or-directory>]... [--json]
 
 Search committed text at local and stored remote-tracking branch tips.
+Repeat --ref to select exact branch names or full refs.
 Repeat --path to select literal files or directories relative to the repository root.
 Use --option=value for values that start with a dash.
 Exit codes: 0 complete (including zero matches), 1 incomplete or failed, 2 invalid arguments.`;
@@ -108,6 +109,35 @@ function resolveBase(branches, aliases, requested, refsComplete) {
   return { state: 'unresolved', reason: 'no-unambiguous-default' };
 }
 
+function selectRefs(report, requestedRefs, refsComplete) {
+  if (!requestedRefs.length) return true;
+
+  const branches = report.branches;
+  report.branches = [];
+  const selected = new Set();
+  for (const requested of requestedRefs) {
+    const exact = branches.find(({ ref }) => ref === requested);
+    if (exact) {
+      selected.add(exact.ref);
+      continue;
+    }
+    const candidates = branches.filter(({ branch: name }) => name === requested);
+    if (candidates.length === 1 && refsComplete) {
+      selected.add(candidates[0].ref);
+      continue;
+    }
+    const value = JSON.stringify(requested);
+    report.issues.push(candidates.length > 1
+      ? { code: 'ambiguous-ref', message: `More than one branch matches ${value}. Supply its full ref.` }
+      : { code: 'ref-unavailable', message: `Could not resolve ${value} to a single available branch.` });
+    return false;
+  }
+
+  report.branches = branches.filter(({ ref }) => selected.has(ref));
+  report.scope.refs = report.branches.map(({ ref }) => ref);
+  return true;
+}
+
 function kindFor(file) {
   const name = posix.basename(file).toLowerCase();
   const extension = posix.extname(name);
@@ -193,7 +223,7 @@ function searchTips(run, query, report) {
   }
 }
 
-function scan({ repo, query, base, paths }) {
+function scan({ repo, query, base, paths, ref: requestedRefs }) {
   const report = {
     status: 'error',
     scope: { targets: ['local', 'remote-tracking'], snapshot: 'committed-tips', uniqueCommits: 0, searchedCommits: 0 },
@@ -202,6 +232,7 @@ function scan({ repo, query, base, paths }) {
     branches: [], matches: [], issues: [],
   };
   if (paths.length) report.scope.paths = paths;
+  if (requestedRefs.length) report.scope.refs = [];
   const env = gitEnvironment();
   let directory = resolve(repo);
   const run = (args) => git(args, directory, env);
@@ -230,6 +261,7 @@ function scan({ repo, query, base, paths }) {
   const aliases = readRefs(refs, report);
   const allRefsRead = refsComplete && !report.issues.some(({ code }) => code === 'invalid-ref');
   report.baseline = resolveBase(report.branches, aliases, base, allRefsRead);
+  if (!selectRefs(report, requestedRefs, allRefsRead)) return report;
   searchTips(run, query, report);
   report.status = report.issues.length === 0 ? 'complete' : 'partial';
   return report;
@@ -244,7 +276,8 @@ function formatText(report) {
   if (baselineHits.length && baselineHits.every(({ kind }) => kind === 'documentation') && code.length) {
     const branchCount = new Set(code.map(({ ref }) => ref)).size;
     const prefix = report.status === 'complete' ? 'Comparison' : 'Comparison among searched tips';
-    const scopeLabel = scope.paths ? ' within selected paths' : '';
+    const filters = [scope.refs && 'branches', scope.paths && 'paths'].filter(Boolean);
+    const scopeLabel = filters.length ? ` within selected ${filters.join(' and ')}` : '';
     lines.push(`${prefix}${scopeLabel} | ${quoted(baseline.ref)} has documentation matches only. Code matches on ${branchCount} other ${branchCount === 1 ? 'branch' : 'branches'}.`);
   }
   lines.push(
@@ -255,6 +288,7 @@ function formatText(report) {
       : `Baseline  unresolved (${baseline.reason})`,
   );
   if (scope.paths) lines.push(`Paths     ${scope.paths.map((path) => quoted(path)).join(', ')}`);
+  if (scope.refs) lines.push(`Refs      ${scope.refs.length ? scope.refs.map((ref) => quoted(ref)).join(', ') : '(none resolved)'}`);
 
   const location = ({ file, line }) => `${quoted(file)}:${line}`;
   const evidence = ({ ref, commit }) => `${quoted(ref)} @ ${commit}`;
@@ -296,7 +330,7 @@ function main() {
   try {
     ({ values } = parseArgs({ options: {
       repo: { type: 'string' }, query: { type: 'string' }, base: { type: 'string' },
-      path: { type: 'string', multiple: true, default: [] },
+      path: { type: 'string', multiple: true, default: [] }, ref: { type: 'string', multiple: true, default: [] },
       json: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     } }));
