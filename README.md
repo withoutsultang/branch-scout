@@ -81,13 +81,13 @@ Codex and Gemini CLI share `.agents/skills/branch-scout`. Claude Code uses `.cla
 node ./bin/branch-scout.mjs --repo "../my project" --query waypointAlert --base main --json
 ```
 
-Use `--ref` and `--path` to narrow the demo search to two branch tips and two locations.
+Use `--ref` and `--path` to narrow the demo search to two branch tips and two locations. In this example, `--ignore-case` also finds `waypointAlert` when the query is `waypointalert`.
 
 ```text
-node ./bin/branch-scout.mjs --repo "$demo" --query waypointAlert --base main --ref main --ref refs/heads/feature/waypoint-alerts --path src --path README.md
+node ./bin/branch-scout.mjs --repo "$demo" --query waypointalert --ignore-case --base main --ref main --ref refs/heads/feature/waypoint-alerts --path src --path README.md
 ```
 
-- `--query` accepts one literal substring on a single line. Use `--query=<value>` when it begins with a dash. Matching is case-sensitive.
+- `--query` accepts one literal substring on a single line. Use `--query=<value>` when it begins with a dash. Matching is case-sensitive by default. `--ignore-case` opts into Git's case-insensitive matching and sets `scope.ignoreCase` in JSON.
 - `--base` selects the comparison branch independently of the checkout and search filters. Use a full ref such as `refs/heads/main` when a short name is ambiguous. The default uses the stored `origin/HEAD` target or the only local branch named `main` or `master`. Otherwise the baseline is unresolved.
 - `--ref` accepts an exact branch name or full ref. Repeat it to select multiple branches. Full refs disambiguate short names shared by local and remote-tracking branches. An unknown or ambiguous selector stops the scan with exit code `1`. JSON reports the selected full refs in `scope.refs`.
 - `--path` accepts a literal file or directory relative to the repository root, with `/` separators. Repeat it to include multiple locations. The selected paths appear in the terminal output and in JSON under `scope.paths`.

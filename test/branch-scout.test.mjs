@@ -151,6 +151,24 @@ test('rejects unknown and ambiguous ref selections without scanning the other se
   }
 });
 
+test('opts in to case-insensitive matches within the selected ref and path', () => {
+  const repo = createDemo(fixtures);
+  const lowerCaseQuery = query.toLowerCase();
+  const filters = ['--ref', feature, '--path', 'src'];
+  const exact = scan(repo, lowerCaseQuery, ...filters);
+  assert.equal(exact.exitCode, 0);
+  assert.deepEqual(exact.report.matches, []);
+  assert.equal(Object.hasOwn(exact.report.scope, 'ignoreCase'), false);
+
+  const { exitCode, report } = scan(repo, lowerCaseQuery, ...filters, '--ignore-case');
+  assert.equal(exitCode, 0);
+  assert.equal(report.scope.ignoreCase, true);
+  assert.deepEqual(report.scope.paths, ['src']);
+  assert.deepEqual(report.matches.map(({ ref, file, line }) => [ref, file, line]), [
+    [`refs/heads/${feature}`, 'src/alerts.mjs', 1],
+  ]);
+});
+
 test('the sample sends the notification through an injected bot without network access', async () => {
   const repo = createDemo(fixtures);
   demoGit(repo, 'switch', feature);
